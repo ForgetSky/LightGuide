@@ -1,0 +1,9 @@
+<resources>
+  <string name="app_name">LightGuideApp</string>
+
+  <string name="one">1</string>
+  <string name="two">22</string>
+  <string name="three">333</string>
+  <string name="start_guide">Start LightGuide</string>
+  <string name="next_target">Next Target</string>
+</resources>
