@@ -5,9 +5,16 @@ An Android library for highlight guide
 ## Gradle
 
 ```groovy
-dependencies {
-    implementation 'com.forgetsky:lightguide:1.0.0'
-}
+	allprojects {
+		repositories {
+			...
+			maven { url 'https://jitpack.io' }
+		}
+	}
+    
+	dependencies {
+	        implementation 'com.github.ForgetSky:LightGuide:1.0.1'
+	}
 ```
 
 
