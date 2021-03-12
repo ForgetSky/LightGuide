@@ -70,7 +70,7 @@ class Target(
     /**
      * Sets [OnTargetListener] to notify the state of [Target].
      */
-    fun setOnTargetListener(listener: OnTargetListener): Builder = apply {
+    fun setOnTargetListener(listener: OnTargetListener?): Builder = apply {
       this.listener = listener
     }
 
@@ -89,7 +89,7 @@ class Target(
 
       private val DEFAULT_ANCHOR =  Rect(0, 0, 0, 0)
 
-      private val DEFAULT_SHAPE = Circle(100f)
+      private val DEFAULT_SHAPE = Circle()
     }
   }
 }

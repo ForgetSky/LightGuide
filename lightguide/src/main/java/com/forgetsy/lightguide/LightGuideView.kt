@@ -227,8 +227,7 @@ internal class LightGuideView @JvmOverloads constructor(
     if (true == target?.autoPosition) {
       val child = getChildAt(0)
       if (child.visibility != View.GONE) {
-        val lp = child.layoutParams as FrameLayout.LayoutParams
-        var gravity = Gravity.BOTTOM
+        var gravity: Int
 
         val width = child.measuredWidth
         val height = child.measuredHeight
@@ -243,31 +242,23 @@ internal class LightGuideView @JvmOverloads constructor(
           val endSpare = parentRight - highLight.right - horizontalInterval
           if (bottomSpare >= height) {
             gravity = Gravity.BOTTOM
-//            lp.topMargin = highLight.bottom.toInt()
           } else if (topSpare >= height) {
             gravity = Gravity.TOP
-//            lp.bottomMargin = highLight.top.toInt()
           } else if (endSpare >= width) {
             gravity = Gravity.END
-//            lp.leftMargin = highLight.right.toInt()
           } else if (startSpare >= width) {
             gravity = Gravity.START
-//            lp.rightMargin = highLight.left.toInt()
           } else if (max(bottomSpare, topSpare) > max(startSpare, endSpare)) {
-            if (bottomSpare >= topSpare) {
-              gravity = Gravity.BOTTOM
-//              lp.topMargin = highLight.bottom.toInt()
+            gravity = if (bottomSpare >= topSpare) {
+              Gravity.BOTTOM
             } else {
-              gravity = Gravity.TOP
-//              lp.bottomMargin = highLight.top.toInt()
+              Gravity.TOP
             }
           } else {
-            if (endSpare >= startSpare) {
-              gravity = Gravity.END
-//              lp.leftMargin = highLight.right.toInt()
+            gravity = if (endSpare >= startSpare) {
+              Gravity.END
             } else {
-              gravity = Gravity.START
-//              lp.rightMargin = highLight.left.toInt()
+              Gravity.START
             }
           }
 

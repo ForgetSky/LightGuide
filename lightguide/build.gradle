@@ -7,6 +7,10 @@ android {
     minSdkVersion configs.minSdkVersion
     targetSdkVersion configs.targetSdkVersion
   }
+  kotlinOptions {
+    jvmTarget = '1.8'
+    freeCompilerArgs += ['-Xjvm-default=all']
+  }
 }
 
 dependencies {
