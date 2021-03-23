@@ -40,7 +40,7 @@ interface Shape {
 
   companion object {
 
-    val DEFAULT_DURATION = TimeUnit.MILLISECONDS.toMillis(300)
+    val DEFAULT_DURATION = TimeUnit.MILLISECONDS.toMillis(200)
 
     val DEFAULT_INTERPOLATOR = DecelerateInterpolator(1.5f)
   }

@@ -2,6 +2,7 @@ package com.forgetsy.lightguide
 
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
+import android.animation.LayoutTransition
 import android.animation.ObjectAnimator
 import android.animation.TimeInterpolator
 import android.animation.ValueAnimator
@@ -32,7 +33,7 @@ internal class LightGuideView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
     defStyleAttr: Int = 0,
-    @ColorInt backgroundColor: Int
+    @ColorInt backgroundColor: Int,
 ) : FrameLayout(context, attrs, defStyleAttr) {
 
   private val backgroundPaint by lazy {
@@ -40,7 +41,10 @@ internal class LightGuideView @JvmOverloads constructor(
   }
 
   private val shapePaint by lazy {
-    Paint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR) }
+    Paint().apply {
+      xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
+      isAntiAlias = true
+    }
   }
 
   private val invalidator = AnimatorUpdateListener { invalidate() }
@@ -55,6 +59,7 @@ internal class LightGuideView @JvmOverloads constructor(
     setWillNotDraw(false)
     setLayerType(View.LAYER_TYPE_HARDWARE, null)
     touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+    layoutTransition = LayoutTransition()
   }
 
   override fun onDraw(canvas: Canvas) {
@@ -107,46 +112,53 @@ internal class LightGuideView @JvmOverloads constructor(
   /**
    * Starts the provided [Target].
    */
-  fun startTarget(target: Target, listener: Animator.AnimatorListener) {
+  fun startTarget(target: Target, listener: OnTargetListener) {
     removeAllViews()
-    this.target = target.apply {
+    this.target = target
+    target.anchor?.let {
       // adjust anchor in case where custom container is set.
       val location = IntArray(2)
       getLocationInWindow(location)
       val offset = Point(location[0], location[1])
       if (offset.x != 0 || offset.y != 0) {
-        anchor.offset(-offset.x, -offset.y)
-        target.shape.setAnchorRect(anchor)
+        it.offset(-offset.x, -offset.y)
+        target.shape.setAnchorRect(it)
+        this.target = target
       }
-    }
-    this.shapeAnimator?.removeAllListeners()
-    this.shapeAnimator?.removeAllUpdateListeners()
-    this.shapeAnimator?.cancel()
-    this.shapeAnimator = ofFloat(0f, 1f).apply {
-      duration = target.shape.duration
-      interpolator = target.shape.interpolator
-      addUpdateListener(invalidator)
-      addListener(listener)
-      addListener(object : AnimatorListenerAdapter() {
-        override fun onAnimationEnd(animation: Animator) {
-          removeAllListeners()
-          removeAllUpdateListeners()
-        }
 
-        override fun onAnimationCancel(animation: Animator) {
-          removeAllListeners()
-          removeAllUpdateListeners()
-        }
-      })
+      this.shapeAnimator?.removeAllListeners()
+      this.shapeAnimator?.removeAllUpdateListeners()
+      this.shapeAnimator?.cancel()
+      this.shapeAnimator = ofFloat(0f, 1f).apply {
+        duration = target.shape.duration
+        interpolator = target.shape.interpolator
+        addUpdateListener(invalidator)
+        addListener(object : AnimatorListenerAdapter() {
+          override fun onAnimationStart(animation: Animator?) {
+            listener.onStarted()
+          }
+
+          override fun onAnimationEnd(animation: Animator) {
+            removeAllListeners()
+            removeAllUpdateListeners()
+          }
+
+          override fun onAnimationCancel(animation: Animator) {
+            removeAllListeners()
+            removeAllUpdateListeners()
+          }
+        })
+      }
+      shapeAnimator?.start()
     }
-    shapeAnimator?.start()
+
     target.overlay?.let {
       addOverlayView(it)
     }
   }
 
   private fun addOverlayView(view: View) {
-    if (true == target?.autoPosition) {
+    if (target?.anchor != null && true == target?.autoPosition) {
       addViewAuto(view)
     } else {
       addView(view)
@@ -162,9 +174,17 @@ internal class LightGuideView @JvmOverloads constructor(
   /**
    * Finishes the current [Target].
    */
-  fun finishTarget(listener: Animator.AnimatorListener) {
-    val currentTarget = target ?: return
-    val currentAnimatedValue = shapeAnimator?.animatedValue ?: return
+  fun finishTarget(listener: OnTargetListener) {
+    val currentTarget = target
+    if (currentTarget == null) {
+      listener.onEnded()
+      return
+    }
+    val currentAnimatedValue = shapeAnimator?.animatedValue
+    if (currentAnimatedValue == null) {
+      listener.onEnded()
+      return
+    }
     shapeAnimator?.removeAllListeners()
     shapeAnimator?.removeAllUpdateListeners()
     shapeAnimator?.cancel()
@@ -172,9 +192,9 @@ internal class LightGuideView @JvmOverloads constructor(
       duration = currentTarget.shape.duration
       interpolator = currentTarget.shape.interpolator
       addUpdateListener(invalidator)
-      addListener(listener)
       addListener(object : AnimatorListenerAdapter() {
         override fun onAnimationEnd(animation: Animator) {
+          listener.onEnded()
           removeAllListeners()
           removeAllUpdateListeners()
         }
@@ -197,28 +217,31 @@ internal class LightGuideView @JvmOverloads constructor(
   }
 
   override fun onTouchEvent(event: MotionEvent?): Boolean {
-    when (event!!.action) {
-      MotionEvent.ACTION_DOWN -> {
-        downX = event.x
-        downY = event.y
-      }
-      MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-        val upX = event.x
-        val upY = event.y
-        target?.let {
-          if (abs(upX - downX) < touchSlop && abs(
-                  upY - downY) < touchSlop) {
-            val rectF: RectF = it.shape.getRectF()
-            if (rectF.contains(upX, upY)) {
-              it.listener?.onClick()
-              return true
+    if (isClickable) {
+      when (event!!.action) {
+        MotionEvent.ACTION_DOWN -> {
+          downX = event.x
+          downY = event.y
+        }
+        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+          val upX = event.x
+          val upY = event.y
+          target?.let {
+            if (it.anchor != null && abs(upX - downX) < touchSlop
+                && abs(upY - downY) < touchSlop) {
+              val rectF: RectF = it.shape.getRectF()
+              if (rectF.contains(upX, upY)) {
+                it.listener?.onClick()
+                return true
+              }
             }
-            performClick()
           }
+          performClick()
         }
       }
+      return true
     }
-    return super.onTouchEvent(event)
+    return false
   }
 
   override fun onLayout(
@@ -226,54 +249,56 @@ internal class LightGuideView @JvmOverloads constructor(
   ) {
     if (true == target?.autoPosition) {
       val child = getChildAt(0)
-      if (child.visibility != View.GONE) {
-        var gravity: Int
+      if (child != null) {
+        if (child.visibility != View.GONE) {
+          var gravity: Int
 
-        val width = child.measuredWidth
-        val height = child.measuredHeight
-        target?.let {
-          val highLight = target!!.shape.getRectF()
+          val width = child.measuredWidth
+          val height = child.measuredHeight
+          target?.let {
+            val highLight = target!!.shape.getRectF()
 
-          val horizontalInterval = highLight.height() * 0.5f
-          val verticalInterval = highLight.height() * 0.5f
-          val bottomSpare = parentBottom - highLight.bottom - verticalInterval
-          val topSpare = highLight.top - verticalInterval
-          val startSpare = highLight.left - horizontalInterval
-          val endSpare = parentRight - highLight.right - horizontalInterval
-          if (bottomSpare >= height) {
-            gravity = Gravity.BOTTOM
-          } else if (topSpare >= height) {
-            gravity = Gravity.TOP
-          } else if (endSpare >= width) {
-            gravity = Gravity.END
-          } else if (startSpare >= width) {
-            gravity = Gravity.START
-          } else if (max(bottomSpare, topSpare) > max(startSpare, endSpare)) {
-            gravity = if (bottomSpare >= topSpare) {
-              Gravity.BOTTOM
+            val horizontalInterval = highLight.height() * 0.5f
+            val verticalInterval = highLight.height() * 0.5f
+            val bottomSpare = parentBottom - highLight.bottom - verticalInterval
+            val topSpare = highLight.top - verticalInterval
+            val startSpare = highLight.left - horizontalInterval
+            val endSpare = parentRight - highLight.right - horizontalInterval
+            if (bottomSpare >= height) {
+              gravity = Gravity.BOTTOM
+            } else if (topSpare >= height) {
+              gravity = Gravity.TOP
+            } else if (endSpare >= width) {
+              gravity = Gravity.END
+            } else if (startSpare >= width) {
+              gravity = Gravity.START
+            } else if (max(bottomSpare, topSpare) > max(startSpare, endSpare)) {
+              gravity = if (bottomSpare >= topSpare) {
+                Gravity.BOTTOM
+              } else {
+                Gravity.TOP
+              }
             } else {
-              Gravity.TOP
+              gravity = if (endSpare >= startSpare) {
+                Gravity.END
+              } else {
+                Gravity.START
+              }
             }
-          } else {
-            gravity = if (endSpare >= startSpare) {
-              Gravity.END
-            } else {
-              Gravity.START
+
+            val childLeft: Int = when (gravity) {
+              Gravity.END -> (highLight.right + (parentRight - highLight.right - width) / 2).toInt()
+              Gravity.START -> (parentLeft + (highLight.left - parentLeft - width) / 2).toInt()
+              else -> (parentLeft + (parentRight - parentLeft - width) / 2)
             }
-          }
 
-          val childLeft : Int = when (gravity) {
-            Gravity.END -> (highLight.right + (parentRight - highLight.right - width) / 2).toInt()
-            Gravity.START -> (parentLeft + (highLight.left - parentLeft - width) / 2).toInt()
-            else -> (parentLeft + (parentRight - parentLeft - width) / 2)
+            val childTop = when (gravity) {
+              Gravity.TOP -> (parentTop + (highLight.top - parentTop - height) / 2).toInt()
+              Gravity.BOTTOM -> (highLight.bottom + (parentBottom - highLight.bottom - height) / 2).toInt()
+              else -> parentTop + (parentBottom - parentTop - height) / 2
+            }
+            child.layout(childLeft, childTop, childLeft + width, childTop + height)
           }
-
-          val childTop = when (gravity) {
-            Gravity.TOP -> (parentTop + (highLight.top - parentTop - height) / 2).toInt()
-            Gravity.BOTTOM -> (highLight.bottom + (parentBottom - highLight.bottom - height) / 2).toInt()
-            else -> parentTop + (parentBottom - parentTop - height) / 2
-          }
-          child.layout(childLeft, childTop, childLeft + width, childTop + height)
         }
       }
     } else {

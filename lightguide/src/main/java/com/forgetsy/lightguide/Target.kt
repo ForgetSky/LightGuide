@@ -9,7 +9,8 @@ import com.forgetsy.lightguide.shape.Shape
  * Target represents the highLight that LightGuide will cast.
  */
 class Target(
-    val anchor: Rect,
+    var anchorView: View?,
+    val anchor: Rect?,
     val shape: Shape,
     val overlay: View?,
     val autoPosition: Boolean,
@@ -21,22 +22,30 @@ class Target(
    * All parameters should be set in this [Builder].
    */
   class Builder {
-
-    private var anchor: Rect = DEFAULT_ANCHOR
+    private var anchorView: View? = null
+    private var anchor: Rect? = null
     private var shape: Shape = DEFAULT_SHAPE
     private var overlay: View? = null
     private var autoPosition: Boolean = true
     private var listener: OnTargetListener? = null
 
+    constructor()
+    constructor(target: Target) {
+      if (target.anchorView != null) {
+        this.anchorView = target.anchorView
+      } else {
+        this.anchor = target.anchor
+      }
+      this.shape = target.shape
+      this.overlay = target.overlay
+      this.autoPosition = target.autoPosition
+      this.listener = target.listener
+    }
     /**
      * Sets a pointer to start a [Target].
      */
     fun setAnchor(view: View): Builder = apply {
-      val location = IntArray(2)
-      view.getLocationInWindow(location)
-      val x = location[0]
-      val y = location[1]
-      setAnchor(Rect(x, y, x + view.width, y + view.height))
+      this.anchorView = view
     }
 
     /**
@@ -75,8 +84,19 @@ class Target(
     }
 
     fun build() : Target {
-      shape.setAnchorRect(anchor)
+      val location = IntArray(2)
+      anchorView?.let {
+        it.getLocationInWindow(location)
+        val x = location[0]
+        val y = location[1]
+        this.anchor = Rect(x, y, x + it.width, y + it.height)
+      }
+
+      anchor?.let {
+        shape.setAnchorRect(it)
+      }
       return Target(
+          anchorView = anchorView,
           anchor = anchor,
           shape = shape,
           overlay = overlay,
@@ -86,9 +106,6 @@ class Target(
     }
 
     companion object {
-
-      private val DEFAULT_ANCHOR =  Rect(0, 0, 0, 0)
-
       private val DEFAULT_SHAPE = Circle()
     }
   }

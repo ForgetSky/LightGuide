@@ -4,12 +4,15 @@ import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.TimeInterpolator
 import android.app.Activity
+import android.view.KeyEvent
+import android.view.View
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.animation.DecelerateInterpolator
 import androidx.annotation.ColorInt
 import androidx.annotation.ColorRes
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
 
 /**
  * Holds all of the [Target]s and [LightGuideView] to show/hide [Target], [LightGuideView] properly.
@@ -21,23 +24,39 @@ import androidx.core.content.ContextCompat
  */
 class LightGuide private constructor(
     private val lightGuideView: LightGuideView,
-    private val targets: Array<Target>,
+    private val targets: Array<Target>?,
     private val duration: Long,
     private val interpolator: TimeInterpolator,
     private val container: ViewGroup,
-    private val lightGuideListener: OnLightGuideListener?
+    private val lightGuideListener: OnLightGuideListener?,
+    private var isClickable: Boolean
 ) {
 
+  private var isShowing: Boolean = false
   private var currentIndex = NO_POSITION
+  private var targetList = mutableListOf<Target>()
 
   init {
-    container.addView(lightGuideView, MATCH_PARENT, MATCH_PARENT)
+    targets?.let { targetList.addAll(it) }
+    ViewCompat.addOnUnhandledKeyEventListener(lightGuideView,
+        ViewCompat.OnUnhandledKeyEventListenerCompat { v: View?, event: KeyEvent ->
+          if (event.keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
+            return@OnUnhandledKeyEventListenerCompat finishLightGuide()
+          }
+          return@OnUnhandledKeyEventListenerCompat false
+        })
   }
 
   /**
    * Starts [LightGuideView] and show the first [Target].
    */
   fun start() {
+    if (isShowing) return
+    if (targetList.isEmpty()) {
+      throw IllegalArgumentException("targets should not be null. ")
+    }
+    container.addView(lightGuideView, MATCH_PARENT, MATCH_PARENT)
+    isShowing = true
     startLightGuide()
   }
 
@@ -72,6 +91,30 @@ class LightGuide private constructor(
     finishLightGuide()
   }
 
+  fun isShowing() : Boolean {
+    return isShowing
+  }
+
+  fun addTarget(vararg target: Target) {
+    targetList.addAll(target)
+  }
+
+  fun refreshTarget() {
+    val target = targetList[currentIndex]
+    val newTarget = Target.Builder(target).build()
+    refreshTarget(newTarget)
+  }
+
+  fun refreshTarget(target: Target) {
+    targetList[currentIndex] = target
+    show(currentIndex)
+  }
+
+  fun setClickable(isClickable: Boolean) {
+    this.isClickable = isClickable
+    lightGuideView.isClickable = isClickable
+  }
+
   /**
    * Starts LightGuide.
    */
@@ -85,7 +128,9 @@ class LightGuide private constructor(
         showTarget(0)
       }
     })
-    lightGuideView.setOnClickListener { lightGuideListener?.onClick() }
+    if (isClickable) {
+      lightGuideView.setOnClickListener { lightGuideListener?.onClick() }
+    }
   }
 
   /**
@@ -93,24 +138,24 @@ class LightGuide private constructor(
    */
   private fun showTarget(index: Int) {
     if (currentIndex == NO_POSITION) {
-      val target = targets[index]
+      val target = targetList[index]
       currentIndex = index
-      lightGuideView.startTarget(target, object : AnimatorListenerAdapter() {
-        override fun onAnimationStart(animation: Animator) {
+      lightGuideView.startTarget(target, object : OnTargetListener {
+        override fun onStarted() {
           target.listener?.onStarted()
         }
       })
     } else {
-      lightGuideView.finishTarget(object : AnimatorListenerAdapter() {
-        override fun onAnimationEnd(animation: Animator) {
+      lightGuideView.finishTarget(object : OnTargetListener {
+        override fun onEnded() {
           val previousIndex = currentIndex
-          val previousTarget = targets[previousIndex]
+          val previousTarget = targetList[previousIndex]
           previousTarget.listener?.onEnded()
-          if (index < targets.size) {
-            val target = targets[index]
+          if (index < targetList.size) {
+            val target = targetList[index]
             currentIndex = index
-            lightGuideView.startTarget(target, object : AnimatorListenerAdapter() {
-              override fun onAnimationStart(animation: Animator) {
+            lightGuideView.startTarget(target, object : OnTargetListener {
+              override fun onStarted() {
                 target.listener?.onStarted()
               }
             })
@@ -125,14 +170,19 @@ class LightGuide private constructor(
   /**
    * Closes LightGuide.
    */
-  private fun finishLightGuide() {
-    lightGuideView.finishLightGuide(duration, interpolator, object : AnimatorListenerAdapter() {
-      override fun onAnimationEnd(animation: Animator) {
-        lightGuideView.cleanup()
-        container.removeView(lightGuideView)
-        lightGuideListener?.onEnded()
-      }
-    })
+  private fun finishLightGuide() : Boolean{
+    if (isShowing) {
+      isShowing = false
+      lightGuideView.finishLightGuide(duration, interpolator, object : AnimatorListenerAdapter() {
+        override fun onAnimationEnd(animation: Animator) {
+          lightGuideView.cleanup()
+          container.removeView(lightGuideView)
+          lightGuideListener?.onEnded()
+        }
+      })
+      return true
+    }
+    return false
   }
 
   companion object {
@@ -152,6 +202,7 @@ class LightGuide private constructor(
     @ColorInt private var backgroundColor: Int = 0x6000000
     private var container: ViewGroup? = null
     private var listener: OnLightGuideListener? = null
+    private var isClickable: Boolean = true
 
     /**
      * Sets [Target]s to show on [LightGuide].
@@ -211,10 +262,16 @@ class LightGuide private constructor(
       this.listener = listener
     }
 
+    /**
+     * Sets [isClickable] for the [LightGuideView].
+     */
+    fun setClickable(isClickable: Boolean): Builder = apply {
+      this.isClickable = isClickable
+    }
+
     fun build(): LightGuide {
 
       val lightGuideView = LightGuideView(activity, null, 0, backgroundColor)
-      val targets = requireNotNull(targets) { "targets should not be null. " }
       val container = container ?: activity.window.decorView as ViewGroup
 
       return LightGuide(
@@ -223,7 +280,8 @@ class LightGuide private constructor(
           duration = duration,
           interpolator = interpolator,
           container = container,
-          lightGuideListener = listener
+          lightGuideListener = listener,
+          isClickable = isClickable
       )
     }
   }
